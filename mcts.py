@@ -1,29 +1,75 @@
-import math
-import sys
-import numpy as np
-import random
 import copy
+from copy import deepcopy
+
+import torch
+import random
+import numpy as np
 from typing import List, Tuple
+from cnn import PolicyNetwork, ValueNetwork
 
 
 class TriminoMok:
-    def get_depth(self):
-        return self._depth
-
-    def __init__(self, board: np.ndarray, type: int, depth:int=0, current_player:int=2) -> None:
+    def __init__(self, board: np.ndarray, type: int, prev_actions:List[Tuple[int,int,int]], depth: int = 0, current_player: int = 2) -> None:
+        if prev_actions is None:
+            prev_actions = [(0, 0, 0), (0, 0, 0), (0, 0, 0)]
         self._current_player = current_player
         self._board = copy.deepcopy(board)
         self._stone_type = type
         self._depth = depth
         self._available_spaces = []  # (int, int)
+        self._prev_actions = prev_actions  # (y, x, rotation)[3]
         self._black_score = 0
         self._white_score = 0
 
-    def copy_state(self):
-        return [self._board, self._stone_type, self._depth, self._current_player]
+    def get_depth(self):
+        return self._depth
 
     def get_board(self):
         return self._board
+
+    def get_player(self):
+        return self._current_player
+
+    def get_available_spaces(self):
+        return self._available_spaces
+
+    def copy_state(self):
+        return [self._board, self._stone_type, self._prev_actions, self._depth, self._current_player]
+
+    def get_board_tensor(self, network_type: str):
+        if network_type == 'policy':
+            board_tensor = np.zeros((14, 19, 19),
+                                    dtype=np.float32)  # black, white, bonus, ones, prev*3, conn, jama, bonus_conn, clear, zeros, current_player, stone_shape
+        else:  # value
+            board_tensor = np.zeros((13, 19, 19), dtype=np.float32)  # black, white, bonus, ones, prev*3, conn, jama, bonus_conn, clear, zeros, current_player
+
+        for times in range(19 * 19):
+            i = times // 19
+            j = times % 19
+
+            # black, white, bonus
+            if self._board[i, j] == 1:
+                board_tensor[0, i, j] = 1.0
+            elif self._board[i, j] == 2:
+                board_tensor[1, i, j] = 1.0
+            elif self._board[i, j] == 3:
+                board_tensor[2, i, j] = 1.0
+
+            # conn, jama, bonus_conn, clear
+
+        board_tensor[3] = 1.0
+
+        for times in range(len(self._prev_actions)): # 4~6
+            for (y, x) in self.get_stones(*self._prev_actions[times]):
+                board_tensor[3 + times, y, x] = 1.0
+
+        board_tensor[11] = 0.0
+        board_tensor[12] = self._current_player
+
+        if network_type == 'policy':
+            board_tensor[13] = self._stone_type
+
+        return board_tensor
 
     def get_stone_type(self):
         return self._stone_type
@@ -104,6 +150,10 @@ class TriminoMok:
 
         if self._stone_type == 2:
             for i, j in self._available_spaces:
+                stones = self.get_stones(i, j, 0)
+                if self.is_exists(stones[1]) and self.is_exists(stones[2]):
+                    moves.append((i, j, 0))
+
                 stones = self.get_stones(i, j, 1)
                 if self.is_exists(stones[1]) and self.is_exists(stones[2]):
                     moves.append((i, j, 1))
@@ -115,28 +165,22 @@ class TriminoMok:
                 stones = self.get_stones(i, j, 3)
                 if self.is_exists(stones[1]) and self.is_exists(stones[2]):
                     moves.append((i, j, 3))
-
-                stones = self.get_stones(i, j, 4)
-                if self.is_exists(stones[1]) and self.is_exists(stones[2]):
-                    moves.append((i, j, 4))
         else:
             for i, j in self._available_spaces:
+                stones = self.get_stones(i, j, 0)
+                if self.is_exists(stones[1]) and self.is_exists(stones[2]):
+                    moves.append((i, j, 0))
+
                 stones = self.get_stones(i, j, 1)
                 if self.is_exists(stones[1]) and self.is_exists(stones[2]):
                     moves.append((i, j, 1))
 
-                stones = self.get_stones(i, j, 2)
-                if self.is_exists(stones[1]) and self.is_exists(stones[2]):
-                    moves.append((i, j, 2))
-
         return moves
-
 
     def is_exists(self, pos: Tuple[int, int]) -> bool:
         return pos in self._available_spaces
 
-
-    def make_move(self, move: (int, int, int), add_depth: bool=True) -> None:
+    def make_move(self, move: (int, int, int), add_depth: bool = True) -> None:
         for i, j in self.get_stones(*move):
             if random.randint(1, 15) == 1:
                 self._board[i][j] = 3
@@ -147,7 +191,6 @@ class TriminoMok:
         self._white_score += self.get_clear_line(2)
 
         self.change_player(add_depth)
-
 
     def get_clear_line(self, player: int) -> int:
         clear_lines_count = 0
@@ -198,7 +241,7 @@ class TriminoMok:
                             else:
                                 break
 
-                            checking_stones.append((ni,nj))
+                            checking_stones.append((ni, nj))
                         else:
                             break
 
@@ -208,12 +251,11 @@ class TriminoMok:
                         for y, x in checking_stones:
                             self._board[y, x] = 0
 
-
         if clear_lines_count: print("Cleared Lines")
 
         return clear_lines_count * 20 + bonus_count * 3
 
-    def change_player(self, add_depth:bool) -> None:
+    def change_player(self, add_depth: bool) -> None:
         self._stone_type = random.randint(1, 3)
         if add_depth: self._depth += 1
         self._current_player = 3 - self._current_player
@@ -460,29 +502,35 @@ class TriminoMok:
         if self._white_score > self._black_score:
             return 1.0
         elif self._white_score < self._black_score:
-            return 0.0
+            return -1.0
         else:
-            return 0.5
+            return 0.0
 
     def is_terminal(self, max_depth: int) -> bool:
         return self._depth > max_depth or len(self.get_moves()) == 0
 
+
 class Node:
-    def __init__(self, move, parent, state: TriminoMok) -> None:
+    def __init__(self, move: Tuple[int, int, int], parent: "Node", state: TriminoMok) -> None:
         self.move = move
         self.parent = parent
         self.state = state
-        self.children = [] # A List of Nodes
-        self.untried_moves = state.get_moves() # A List of (y, x, rotation)
+        self.children = []  # A List of Nodes
+        self.untried_moves = state.get_moves()  # A List of (y, x, rotation)
         self.visits = 0
-        self.wins = 0
+        self.value = 0.0
 
-    def ucb1(self, parent_visits: int) -> float:
-        if self.visits == 0: return sys.float_info.max
-        else: return self.wins / self.visits + 1.4 * math.sqrt(math.log(parent_visits) / self.visits)
+    def select_child(self, policy_values: torch.Tensor):
+        children = sorted(self.children, key=lambda c: policy_values[*c.move].item(), reverse=True)
 
-    def select_child(self):
-        return sorted(self.children, key=lambda c: -c.ucb1(self.visits))[0] # 내림차순 정렬
+        while True:
+            if len(children):
+                if children[0].move in self.untried_moves:
+                    return children[0]
+                else:
+                    children.remove(children[0])
+            else:
+                return self.children[0] # 땜빵
 
     def add_child(self, move: Tuple[int, int, int], state: TriminoMok):
         child = Node(move, self, state)
@@ -492,84 +540,88 @@ class Node:
 
     def update(self, result: float) -> None:
         self.visits += 1
-        self.wins += result
+        self.value += result
+
 
 class Mcts:
+    def __init__(self, policy: PolicyNetwork, value: ValueNetwork) -> None:
+        self.policy_network = policy
+        self.value_network = value
+
     def run(self, root_state: TriminoMok, iterations: int) -> Tuple[int, int, int]:
         root = Node(None, None, copy.deepcopy(root_state))
 
         for _ in range(iterations):
             node = self._tree_policy(root)
-            wins = self._default_policy(node.state)
-            self._back_propagate(node, wins)
+            self._back_propagate(node)
 
         if len(root.children) == 0: return 0, 0, 0  # 오류 감지
-        return sorted(root.children, key=lambda c: - c.wins / c.visits)[0].move
+        return sorted(root.children, key=lambda c: c.value / c.visits, reverse=True)[0].move
 
     def _tree_policy(self, node: "Node") -> "Node":
-        while not node.state.is_terminal(5):
-            if len(node.untried_moves) != 0: return self._expand(node)
-            else: node = node.select_child()
+        while not node.state.is_terminal(10):
+            if len(node.untried_moves) != 0:
+                return self._expand(node)
+            else:
+                board_tensor = torch.from_numpy(node.state.get_board_tensor('policy')).unsqueeze(0).float()
+                policy_values = self.policy_network(board_tensor)
+                node = node.select_child(policy_values)
         return node
 
     def _expand(self, node: "Node") -> "Node":
         move = random.choice(node.untried_moves)
-        node.state.make_move(move)
+        next_node = deepcopy(node)
+        next_node.state.make_move(move)
 
-        return node.add_child(move, node.state)
+        return node.add_child(move, next_node.state)
 
-    def _default_policy(self, state: "TriminoMok") -> float:
-        current_state = state
+    def _back_propagate(self, node: "Node") -> None:
+        board_tensor = torch.from_numpy(node.state.get_board_tensor('value')).unsqueeze(0).float()
+        win_prob = self.value_network(board_tensor).item()
 
-        while not current_state.is_terminal(5):
-            moves = current_state.get_moves()
-            if len(moves) == 0: break
-            state.make_move(random.choice(moves))
-
-        return state.is_win()
-
-    def _back_propagate(self, node: "Node", wins: float) -> None:
-        while node != None:
-            node.update(wins)
+        while not node is None:
+            node.update(win_prob)
+            win_prob *= 0.1  # 당장을 위해 행동하도록
             node = node.parent
+
 
 def get_stones(i, j, r, stone_type) -> List[Tuple[int, int]]:
     stones = [(0, 0)] * 3
 
     if stone_type == 1:
-        if r == 1:
+        if r == 0:
             stones[0] = (i, j)
             stones[1] = (i, j + 1)
             stones[2] = (i, j + 2)
-        else:
+        else: # r == 1
             stones[0] = (i, j)
             stones[1] = (i + 1, j)
             stones[2] = (i + 2, j)
 
     elif stone_type == 2:
-        if r == 1:
+        if r == 0:
             stones[0] = (i, j)
             stones[1] = (i, j + 1)
             stones[2] = (i + 1, j + 1)
-        elif r == 2:
+        elif r == 1:
             stones[0] = (i, j)
             stones[1] = (i, j + 1)
             stones[2] = (i + 1, j)
-        elif r == 3:
+        elif r == 2:
             stones[0] = (i, j)
             stones[1] = (i, j + 1)
             stones[2] = (i - 1, j + 1)
-        else:
+        else: # r == 3
             stones[0] = (i, j)
             stones[1] = (i + 1, j)
             stones[2] = (i + 1, j + 1)
 
     else:  # stone_type == 3
-        if r == 1:
+        if r == 0:
             stones[0] = (i, j)
             stones[1] = (i - 1, j + 1)
             stones[2] = (i - 2, j + 2)
-        else:
+        else: # r == 1
             stones[0] = (i, j)
             stones[1] = (i + 1, j + 1)
             stones[2] = (i + 2, j + 2)

@@ -5,9 +5,9 @@ class PolicyNetwork(nn.Module):
     def __init__(self):
         super(PolicyNetwork, self).__init__()
 
-        # Input: 10x19x19
+        # Input: 14x19x19
         # Convolutional Layers
-        self.conv1 = nn.Conv2d(10, 32, 4)
+        self.conv1 = nn.Conv2d(14, 32, 4)
         self.conv2 = nn.Conv2d(32, 64, 4)
 
         # Pooling Layers
@@ -34,9 +34,9 @@ class ValueNetwork(nn.Module):
     def __init__(self):
         super(ValueNetwork, self).__init__()
 
-        # Input: 9x19x19
+        # Input: 13x19x19
         # Convolutional Layers
-        self.conv1 = nn.Conv2d(9, 32, 4)
+        self.conv1 = nn.Conv2d(13, 32, 4)
         self.conv2 = nn.Conv2d(32, 64, 4)
 
         # Pooling Layers
@@ -55,6 +55,5 @@ class ValueNetwork(nn.Module):
         n = n.view(-1, 64 * 5 * 5)
 
         n = self.fc1(n)
-        n = n.view(-1, 1)
 
         return n
