@@ -91,6 +91,10 @@ def main():
         # Save the models
         torch.save(policy_net.state_dict(), 'policy_net.pth')
         torch.save(value_net.state_dict(), 'value_net.pth')
+        
+        if episode % 50 == 49:
+            torch.save(policy_net.state_dict(), f'saves/policy_net_{episode + 1}.pth')
+            torch.save(value_net.state_dict(), f'saves/value_net_{episode + 1}.pth')
         print("Models saved.")
 
     print("Training complete and models saved.")
