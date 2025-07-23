@@ -13,6 +13,7 @@ def main():
     num_mcts_iterations = 100
     learning_rate = 0.001
     max_depth = 30
+    variation = 5 # 30 +- 5
 
     # Initialize networks
     policy_net = PolicyNetwork()
@@ -67,12 +68,13 @@ def main():
 
         # Initialize game state
         board, stone_type = init_board()
-        game_state = TriminoMok(board, stone_type)
+        game_state = TriminoMok(board, stone_type, depth=1)
         mcts = Mcts(policy_net, value_net)
 
         game_history = []
 
-        while not game_state.is_terminal(max_depth):
+        episode_depth = np.random.randint(max_depth - variation, max_depth + variation)
+        while not game_state.is_terminal(episode_depth):
             # Run MCTS to get the best move
             best_move = mcts.run(game_state, num_mcts_iterations)
 

@@ -1,20 +1,24 @@
 import time
 import torch
 import os.path
+from random import randint
 from main import init_board
 from mcts import TriminoMok, Mcts
 from cnn import PolicyNetwork, ValueNetwork
+
 
 def print_board(board):
     for row in board:
         print(" ".join(map(str, row)))
     print() 
 
+
 def main():
     # Hyperparameters
     num_episodes = 10000
     num_mcts_iterations = 100
     max_depth = 30
+    variation = 5 # 30 +- 5
 
     # Load trained models
     policy_net = PolicyNetwork()
@@ -39,16 +43,18 @@ def main():
 
     # Initialize game state
     board, stone_type = init_board()
-    game_state = TriminoMok(board, stone_type)
+    game_state = TriminoMok(board, stone_type, depth=1)
 
-    print("Starting new game. Initial board:")
+    print("Starting new game.")
+    print("Turn 1\nPlayer 1's turn")
     print_board(game_state.get_board())
 
     mcts = Mcts(policy_net, value_net)
 
     turn = 1
 
-    while not game_state.is_terminal(max_depth):
+    play_depth = randint(max_depth - variation, max_depth + variation)
+    while not game_state.is_terminal(play_depth):
         turn += 1
         print(f"Turn {turn}\nPlayer {game_state.get_player()}'s turn (Stone type: {game_state.get_stone_type()})")
 
@@ -76,6 +82,7 @@ def main():
         print("Player 1 (Black) wins!")
     else:
         print("It's a draw!")
+
 
 if __name__ == "__main__":
     main()

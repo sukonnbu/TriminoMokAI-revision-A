@@ -18,7 +18,7 @@ class TriminoMok:
     # --- Core Public Methods (for game simulation) ---
 
     def is_terminal(self, max_depth: int) -> bool:
-        return self._depth > max_depth or len(self.get_moves()) == 0
+        return self._depth >= max_depth or len(self.get_moves()) == 0
 
     def get_moves(self) -> List[Tuple[int, int, int]]:
         # (y, x, rotation)
