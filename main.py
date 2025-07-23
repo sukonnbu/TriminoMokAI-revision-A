@@ -1,59 +1,78 @@
+import os
 import torch
 import numpy as np
-from mcts import TriminoMok, Mcts
-from cnn import PolicyNetwork, ValueNetwork
 from torch import nn
 import torch.optim as optim
-import os
+from mcts import TriminoMok, Mcts
+from cnn import PolicyNetwork, ValueNetwork
+
 
 def main():
     # Hyperparameters
-    num_episodes = 1000
-    num_mcts_iterations = 50
+    num_episodes = 10000
+    num_mcts_iterations = 100
     learning_rate = 0.001
+    max_depth = 30
 
     # Initialize networks
     policy_net = PolicyNetwork()
     value_net = ValueNetwork()
 
-    if os.path.exists('policy_net.pth'):
-        policy_net.load_state_dict(torch.load('policy_net.pth'))
-        print("Policy network loaded from file.")
-    else:
+    policy_loaded = False
+    value_loaded = False
+
+    policy_episode = 0
+    value_episode = 0
+
+    for i in range(num_episodes, 0, -1):
+        if (not policy_loaded) and os.path.exists(f"policy_net_{i}.pth"):
+            policy_net.load_state_dict(torch.load(f'policy_net_{i}.pth'))
+            print("Policy network loaded from file.")
+            policy_loaded = True
+
+            policy_episode = i
+
+        if (not value_loaded) and os.path.exists(f"value_net_{i}.pth"):
+            value_net.load_state_dict(torch.load(f'value_net_{i}.pth'))
+            print("Value network loaded from file.")
+            value_loaded = True
+
+            value_episode = i
+
+        if policy_loaded and value_loaded:
+            break
+
+    if not policy_loaded:
         # Weight initialization
         for m in policy_net.modules():
             if isinstance(m, (nn.Conv2d, nn.Linear)):
                 nn.init.xavier_uniform_(m.weight)
         print("Policy network initialized.")
 
-    if os.path.exists('value_net.pth'):
-        value_net.load_state_dict(torch.load('value_net.pth'))
-        print("Value network loaded from file.")
-    else:
+    if not value_loaded:
         # Weight initialization
         for m in value_net.modules():
             if isinstance(m, (nn.Conv2d, nn.Linear)):
                 nn.init.xavier_uniform_(m.weight)
         print("Value network initialized.")
 
+    episode = min(policy_episode, value_episode)
+
     # Optimizers
     policy_optimizer = optim.Adam(policy_net.parameters(), lr=learning_rate)
     value_optimizer = optim.Adam(value_net.parameters(), lr=learning_rate)
 
-    for episode in range(num_episodes):
+    while episode < num_episodes:
         print(f"Episode {episode + 1}/{num_episodes}")
 
         # Initialize game state
-        board = np.zeros((19, 19), dtype=int)
-        board[8,8] = 1
-        board[8,9] = 1
-        initial_stone_type = np.random.randint(1, 4)
-        game_state = TriminoMok(board, initial_stone_type, None)
+        board, stone_type = init_board()
+        game_state = TriminoMok(board, stone_type)
         mcts = Mcts(policy_net, value_net)
 
         game_history = []
 
-        while not game_state.is_terminal(max_depth=30):
+        while not game_state.is_terminal(max_depth):
             # Run MCTS to get the best move
             best_move = mcts.run(game_state, num_mcts_iterations)
 
@@ -89,15 +108,54 @@ def main():
             value_optimizer.step()
 
         # Save the models
-        torch.save(policy_net.state_dict(), 'policy_net.pth')
-        torch.save(value_net.state_dict(), 'value_net.pth')
+        torch.save(policy_net.state_dict(), f'policy_net_{episode + 1}.pth')
+        torch.save(value_net.state_dict(), f'value_net_{episode + 1}.pth')
         
-        if episode % 50 == 49:
+        if os.path.exists(f'policy_net_{episode}.pth'):
+            os.remove(f"policy_net_{episode}.pth")
+        if os.path.exists(f"value_net_{episode}.pth"):
+            os.remove(f"value_net_{episode}.pth")
+        
+        if episode % 10 == 9:
             torch.save(policy_net.state_dict(), f'saves/policy_net_{episode + 1}.pth')
             torch.save(value_net.state_dict(), f'saves/value_net_{episode + 1}.pth')
         print("Models saved.")
 
+        episode += 1
+
     print("Training complete and models saved.")
+
+
+def init_board():
+    board = np.zeros((19, 19), dtype=int)
+
+    initial_move = np.random.randint(0, 7)
+    center_x = np.random.randint(6, 10)
+    center_y = np.random.randint(6, 10)
+
+    board[center_y, center_x] = 1
+
+    match initial_move:
+        case 0:
+            board[center_y, center_x + 1] = 1
+        case 1:
+            board[center_y + 1, center_x] = 1
+        case 2:
+            board[center_y, center_x - 1] = 1
+        case 3:
+            board[center_y - 1, center_x] = 1
+        case 4:
+            board[center_y + 1, center_x + 1] = 1
+        case 5:
+            board[center_y + 1, center_x - 1] = 1
+        case 6:
+            board[center_y - 1, center_x - 1] = 1
+        case 7:
+            board[center_y - 1, center_x + 1] = 1
+
+    stone_type = np.random.randint(1, 4)
+
+    return board, stone_type
 
 
 if __name__ == "__main__":

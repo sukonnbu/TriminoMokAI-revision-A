@@ -1,7 +1,7 @@
-import torch
-import numpy as np
 import time
-
+import torch
+import os.path
+from main import init_board
 from mcts import TriminoMok, Mcts
 from cnn import PolicyNetwork, ValueNetwork
 
@@ -11,15 +11,26 @@ def print_board(board):
     print() 
 
 def main():
+    # Hyperparameters
+    num_episodes = 10000
+    num_mcts_iterations = 100
+    max_depth = 30
+
     # Load trained models
     policy_net = PolicyNetwork()
     value_net = ValueNetwork()
 
-    try:
-        policy_net.load_state_dict(torch.load("policy_net.pth"))
-        value_net.load_state_dict(torch.load("value_net.pth"))
-        print("Models loaded successfully.")
-    except FileNotFoundError:
+    model_loaded = False
+
+    for i in range(num_episodes, 0, -1):
+        if os.path.exists(f"policy_net_{i}.pth") and os.path.exists(f"value_net_{i}.pth"):
+            policy_net.load_state_dict(torch.load(f"policy_net_{i}.pth"))
+            value_net.load_state_dict(torch.load(f"value_net_{i}.pth"))
+            model_loaded = True
+            print(f"Models loaded successfully. Version: {i} / {num_episodes}")
+            break
+
+    if not model_loaded:
         print("Model files not found. Please run the training script (main.py) first.")
         return
 
@@ -27,21 +38,19 @@ def main():
     value_net.eval()
 
     # Initialize game state
-    board = np.zeros((19, 19), dtype=int)
-    board[8, 8] = 1
-    board[8, 9] = 1
-    initial_stone_type = np.random.randint(1, 4)
-    game_state = TriminoMok(board, initial_stone_type, prev_actions=None)
+    board, stone_type = init_board()
+    game_state = TriminoMok(board, stone_type)
 
     print("Starting new game. Initial board:")
     print_board(game_state.get_board())
 
-    num_mcts_iterations = 50 # Use the same number of iterations as in training for consistency
-
     mcts = Mcts(policy_net, value_net)
 
-    while not game_state.is_terminal(max_depth=30):
-        print(f"Player {game_state.get_player()}'s turn (Stone type: {game_state.get_stone_type()})")
+    turn = 1
+
+    while not game_state.is_terminal(max_depth):
+        turn += 1
+        print(f"Turn {turn}\nPlayer {game_state.get_player()}'s turn (Stone type: {game_state.get_stone_type()})")
 
         # Get the best move from the AI
         best_move = mcts.run(game_state, num_mcts_iterations)
@@ -63,7 +72,7 @@ def main():
     print("Game over!")
     if winner == 1.0:
         print("Player 2 (White) wins!")
-    elif winner == 0.0:
+    elif winner == -1.0:
         print("Player 1 (Black) wins!")
     else:
         print("It's a draw!")
