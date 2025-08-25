@@ -10,10 +10,10 @@ from cnn import PolicyNetwork, ValueNetwork
 def main():
     # Hyperparameters
     num_episodes = 10000
-    num_mcts_iterations = 100
+    num_mcts_iterations = 50
     learning_rate = 0.001
-    max_depth = 30
-    variation = 5 # 30 +- 5
+    min_depth = 10
+    max_depth = 40
 
     # Initialize networks
     policy_net = PolicyNetwork()
@@ -67,16 +67,16 @@ def main():
         print(f"Episode {episode + 1}/{num_episodes}")
 
         # Initialize game state
-        board, stone_type = init_board()
-        game_state = TriminoMok(board, stone_type, depth=1)
+        board, initial_stones, stone_type = init_board()
+        game_state = TriminoMok(board, stone_type, initial_stones, depth=1)
         mcts = Mcts(policy_net, value_net)
 
         game_history = []
 
-        episode_depth = np.random.randint(max_depth - variation, max_depth + variation)
+        episode_depth = np.random.randint(min_depth, max_depth)
         while not game_state.is_terminal(episode_depth):
             # Run MCTS to get the best move
-            best_move = mcts.run(game_state, num_mcts_iterations)
+            best_move = mcts.run(game_state, num_mcts_iterations, episode_depth)
 
             # Store the state and the move probabilities
             game_history.append((game_state.copy_state(), best_move))
@@ -135,29 +135,40 @@ def init_board():
     center_x = np.random.randint(6, 10)
     center_y = np.random.randint(6, 10)
 
+    initial_stones = []
+
     board[center_y, center_x] = 1
+    initial_stones.append((center_y, center_x))
 
     match initial_move:
         case 0:
             board[center_y, center_x + 1] = 1
+            initial_stones.append((center_y, center_x + 1))
         case 1:
             board[center_y + 1, center_x] = 1
+            initial_stones.append((center_y + 1, center_x))
         case 2:
             board[center_y, center_x - 1] = 1
+            initial_stones.append((center_y, center_x - 1))
         case 3:
             board[center_y - 1, center_x] = 1
+            initial_stones.append((center_y - 1, center_x))
         case 4:
             board[center_y + 1, center_x + 1] = 1
+            initial_stones.append((center_y + 1, center_x + 1))
         case 5:
             board[center_y + 1, center_x - 1] = 1
+            initial_stones.append((center_y + 1, center_x - 1))
         case 6:
             board[center_y - 1, center_x - 1] = 1
+            initial_stones.append((center_y - 1, center_x - 1))
         case 7:
             board[center_y - 1, center_x + 1] = 1
+            initial_stones.append((center_y - 1, center_x + 1))
 
     stone_type = np.random.randint(1, 4)
 
-    return board, stone_type
+    return board, [initial_stones], stone_type
 
 
 if __name__ == "__main__":
